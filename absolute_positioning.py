@@ -104,3 +104,9 @@ def set_absolute_orientation(tip_name, qx, qy, qz, qw, timeout=None, lin_speed=0
         rospy.loginfo("Motion controller successfully finished the trajectory!")
     else:
         rospy.logerr("Motion controller failed with error %s", result.errorId)
+
+def orient_vertical(tip_name):
+    set_absolute_orientation(tip_name, 0.0, 1.0, 0.0, 0.0)
+
+def orient_horizontal(tip_name):
+    set_absolute_orientation(tip_name, 1.0, 0.0, 0.0, 0.0)
