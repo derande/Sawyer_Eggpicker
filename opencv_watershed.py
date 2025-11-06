@@ -4,34 +4,7 @@ import cv2
 import numpy as np
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-
-
-def orientation_from_contour(cnt):
-    area = cv2.contourArea(cnt)
-    if area < 50:  # sehr klein → ignorieren
-        return None
-
-    # fitEllipse braucht >=5 Punkte und liefert (center, (MA, ma), angle)
-    if len(cnt) >= 5:
-        ellipse = cv2.fitEllipse(cnt)
-        (cx, cy), (MA, ma), angle_deg = ellipse  # MA = major axis length? (OpenCV kann MA/ma vertauschen)
-        # OpenCVs (MA, ma) sind nicht garantiert sortiert; wir sortieren:
-        major = max(MA, ma); minor = min(MA, ma)
-        # Der zurückgegebene Winkel bezieht sich auf die Achse, die OpenCV als "MA" liefert.
-        # Wenn MA != major, dann 90° addieren, um auf die tatsächliche lange Achse zu kommen.
-        if MA < ma:
-            angle_deg = (angle_deg + 90.0) % 180.0
-        return (cx, cy), major, minor, angle_deg
-
-    # Fallback: PCA (falls fitEllipse nicht möglich)
-    pts = cnt.reshape(-1, 2).astype(np.float32)
-    mean, eigenvectors = cv2.PCACompute(pts, mean=None)  # EV[0] = Hauptrichtung
-    cx, cy = mean[0]
-    v = eigenvectors[0]  # (vx, vy)
-    angle_rad = np.arctan2(v[1], v[0])
-    angle_deg = (np.degrees(angle_rad)) % 180.0
-    # major/minor approximieren:
-    return (cx, cy), 1.0, 0.5, angle_deg
+from orientation_from_contour import orientation_from_contour
 
 
 bridge = CvBridge()
