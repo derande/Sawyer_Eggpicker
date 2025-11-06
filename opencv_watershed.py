@@ -5,6 +5,35 @@ import numpy as np
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
+
+def orientation_from_contour(cnt):
+    area = cv2.contourArea(cnt)
+    if area < 50:  # sehr klein → ignorieren
+        return None
+
+    # fitEllipse braucht >=5 Punkte und liefert (center, (MA, ma), angle)
+    if len(cnt) >= 5:
+        ellipse = cv2.fitEllipse(cnt)
+        (cx, cy), (MA, ma), angle_deg = ellipse  # MA = major axis length? (OpenCV kann MA/ma vertauschen)
+        # OpenCVs (MA, ma) sind nicht garantiert sortiert; wir sortieren:
+        major = max(MA, ma); minor = min(MA, ma)
+        # Der zurückgegebene Winkel bezieht sich auf die Achse, die OpenCV als "MA" liefert.
+        # Wenn MA != major, dann 90° addieren, um auf die tatsächliche lange Achse zu kommen.
+        if MA < ma:
+            angle_deg = (angle_deg + 90.0) % 180.0
+        return (cx, cy), major, minor, angle_deg
+
+    # Fallback: PCA (falls fitEllipse nicht möglich)
+    pts = cnt.reshape(-1, 2).astype(np.float32)
+    mean, eigenvectors = cv2.PCACompute(pts, mean=None)  # EV[0] = Hauptrichtung
+    cx, cy = mean[0]
+    v = eigenvectors[0]  # (vx, vy)
+    angle_rad = np.arctan2(v[1], v[0])
+    angle_deg = (np.degrees(angle_rad)) % 180.0
+    # major/minor approximieren:
+    return (cx, cy), 1.0, 0.5, angle_deg
+
+
 bridge = CvBridge()
 
 def color_mask_bgr(img):
@@ -72,7 +101,7 @@ def watershed_segment(img_bgr):
             best_dist = d
             best_label = label
 
-    # 11) Ansicht „nur mittigstes Objekt“
+    # 11) Ansicht „nur mittigstes Objekt“ mit eingezeichnetem Winkel
     highlight = img.copy()
     dimmed = (highlight * 0.2).astype(np.uint8)
     if best_label is not None:
@@ -91,6 +120,19 @@ def watershed_segment(img_bgr):
             if M["m00"] > 1e-5:
                 cx, cy = int(M["m10"]/M["m00"]), int(M["m01"]/M["m00"])
                 cv2.circle(highlight_view, (cx,cy), 5, (0,255,0), -1)
+            orientation = orientation_from_contour(c)
+            if orientation is not None:
+                (ocx, ocy), major, minor, angle_deg = orientation
+                length = int(0.5 * major)
+                angle_rad = np.radians(angle_deg)
+                x2 = int(ocx + length * np.cos(angle_rad))
+                y2 = int(ocy + length * np.sin(angle_rad))
+                x1 = int(ocx - length * np.cos(angle_rad))
+                y1 = int(ocy - length * np.sin(angle_rad))
+                cv2.line(highlight_view, (x1,y1), (x2,y2), (255,0,0), 2)
+                cv2.circle(highlight_view, (int(ocx), int(ocy)), 4, (255,0,0), -1)
+                cv2.putText(highlight_view, f"{angle_deg:.1f} deg", (x, y-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 2)
         title = "Central object only"
     else:
         # Kein valides Label gefunden
