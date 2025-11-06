@@ -121,9 +121,9 @@ def set_absolute_position(tip_name, x, y, z, timeout=10.0,
     if joints is None:
         return
 
-    rospy.loginfo("IK Joint Solution: %s", joints)
+    #rospy.loginfo("IK Joint Solution: %s", joints)
     _execute_joint_dict(joints, speed_ratio=speed_ratio, timeout=timeout)
-    rospy.loginfo("Move complete.")
+    #rospy.loginfo("Move complete.")
 
 def set_absolute_orientation(tip_name, qx, qy, qz, qw, timeout=10.0,
                              lin_speed=0.6, lin_acc=0.6,
@@ -156,9 +156,9 @@ def set_absolute_orientation(tip_name, qx, qy, qz, qw, timeout=10.0,
     if joints is None:
         return
 
-    rospy.loginfo("IK Joint Solution: %s", joints)
+    #rospy.loginfo("IK Joint Solution: %s", joints)
     _execute_joint_dict(joints, speed_ratio=speed_ratio, timeout=timeout)
-    rospy.loginfo("Move complete.")
+    #rospy.loginfo("Move complete.")
 
 def orient_vertical(tip_name, **kwargs):
     """Convenience: x=0,y=1,z=0,w=0 quaternion."""
@@ -167,6 +167,49 @@ def orient_vertical(tip_name, **kwargs):
 def orient_horizontal(tip_name, **kwargs):
     """Convenience: x=1,y=0,z=0,w=0 quaternion."""
     set_absolute_orientation(tip_name, 1.0, 0.0, 0.0, 0.0, **kwargs)
+
+
+def set_absolute_pose(tip_name, x, y, z, qx, qy, qz, qw, timeout=10.0,
+                      lin_speed=0.6, lin_acc=0.6,
+                      rot_speed=1.57, rot_acc=1.57,
+                      limb_name='right',
+                      speed_ratio=0.3,
+                      use_advanced_ik=False):
+    """
+    Move tip to absolute (x,y,z) and absolute orientation (qx,qy,qz,qw),
+    using IK -> joint command in a single solve/command.
+
+    Returns:
+        dict of joint_name->position on success, or None on failure.
+    """
+    _ensure_node()
+    limb = Limb()
+
+    # Start from current pose to preserve any fields we don't touch
+    ps = _current_pose_as_ps(limb, tip_name)
+    if ps is None:
+        return None
+
+    ps.header.stamp = rospy.Time.now()
+    ps.header.frame_id = 'base'
+    ps.pose.position = Point(x=x, y=y, z=z)
+    ps.pose.orientation = Quaternion(x=qx, y=qy, z=qz, w=qw)
+
+    # Optional: seed & nullspace like your other helpers
+    seed = limb.joint_ordered_positions() if use_advanced_ik else None
+    ns_goal = None
+
+    joints = _solve_ik(ps, tip_name=tip_name, limb_name=limb_name,
+                       seed_joint_positions=seed,
+                       nullspace_goal=ns_goal)
+    if joints is None:
+        return None
+
+    #rospy.loginfo("IK Joint Solution: %s", joints)
+    _execute_joint_dict(joints, speed_ratio=speed_ratio, timeout=timeout)
+    #rospy.loginfo("Move complete.")
+    return joints
+
 
 
 # ---------------------------
