@@ -73,7 +73,7 @@ class CameraMover:
                  solve_type="Distance",
                  speed_ratio=0.15,
                  ik_timeout=0.6):
-        rospy.loginfo("Initializing CameraMover…")
+        #rospy.loginfo("Initializing CameraMover…")
         self.base = base_frame
         self.cam = cam_frame
         self.hand = hand_frame
@@ -116,7 +116,7 @@ class CameraMover:
         except Exception:
             self.seed = _seed_mid_limits(self.ik)
 
-        rospy.loginfo("CameraMover ready. Tip link: %s", self.cam if self.use_camera_tip else self.hand)
+        #rospy.loginfo("CameraMover ready. Tip link: %s", self.cam if self.use_camera_tip else self.hand)
 
     def _solve_once(self, px, py, pz, qx, qy, qz, qw):
         """Single IK call with current seed; returns solution or None."""
@@ -177,8 +177,8 @@ class CameraMover:
         self.limb.move_to_joint_positions(cmd, timeout=30.0)
         self.seed = list(solution)  # reuse for next call
 
-        rospy.loginfo("Camera moved to (%.3f, %.3f, %.3f) with heading %s°.",
-                      x, y, z, str(used_heading) if used_heading is not None else "fixed")
+        #rospy.loginfo("Camera moved to (%.3f, %.3f, %.3f) with heading %s°.",
+        #              x, y, z, str(used_heading) if used_heading is not None else "fixed")
         return True
 
 
