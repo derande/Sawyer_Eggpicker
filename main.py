@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from gripper_helper import check_object_gripped
 from move_camera import CameraMover
 import rospy
 import numpy as np
@@ -18,30 +19,9 @@ from get_camera_location import get_camera_position
 from intera_interface import Limb
 
 
-egg_basket_1 = {
-        "head_pan": 0.4700849609375, 
-        "right_j0": -0.7110517578125, 
-        "right_j1": 1.2322021484375, 
-        "right_j2": -0.2424951171875, 
-        "right_j3": -1.511798828125, 
-        "right_j4": -1.4862236328125, 
-        "right_j5": -1.6674609375, 
-        "right_j6": 3.6852060546875, 
-        "torso_t0": 0.0
-    }
-
-
-egg_basket_2 = {
-    "head_pan": 0.4700849609375, 
-    "right_j0": -0.7273173828125, 
-    "right_j1": 1.1624365234375, 
-    "right_j2": -0.462666015625, 
-    "right_j3": -1.38658984375, 
-    "right_j4": -1.442958984375, 
-    "right_j5": -1.527609375, 
-    "right_j6": 3.4133271484375, 
-    "torso_t0": 0.0
-}
+egg_basket_1 = [-0.344201171875, 0.199333984375, 0.266794921875, 0.13100390625, -2.075982421875, -1.985689453125, -3.4116142578125]
+egg_basket_2 = [-0.479912109375, 0.8671083984375, -0.411232421875, -0.995740234375, -1.3752412109375, -1.9155185546875, -2.9495322265625]
+egg_basket_3 = [-0.58746484375, 0.9589541015625, -0.411376953125, -1.1520986328125, -1.4284599609375, -1.7224873046875, -2.9493251953125]
 
 
 def quat_multiply(q1, q2):
@@ -60,15 +40,6 @@ def quat_about_z(theta_rad):
     s = math.sin(theta_rad/2.0)
     c = math.cos(theta_rad/2.0)
     return (0.0, 0.0, s, c)
-
-def move_limb_to(limb, pos):
-    """
-    Moves the limb (limb) and into the position of joint angles (pos)
-    - uses global speed for always getting the same speed on the movements
-    - timeout is always 10secs => when motion takes longer than that we return
-    """
-    limb.set_joint_position_speed(0.1)
-    limb.move_to_joint_positions(pos,timeout=60)
 
 
 def func():
@@ -99,7 +70,7 @@ def ring_offsets(n, radius):
     return [(radius*math.cos(2*math.pi*i/n),
              radius*math.sin(2*math.pi*i/n)) for i in range(n)]
 
-def main():
+def main(egg_carton_index = 0):
     rospy.init_node("egg_picker_main")
 
     gripper = intera_interface.Gripper('right_gripper')
@@ -116,7 +87,7 @@ def main():
     offsets_fine   = [(0.0, 0.0)] + ring_offsets(9, 0.005)
     
     
-    mover = CameraMover(speed_ratio=0.12)    
+    mover = CameraMover(speed_ratio=0.06)    
     for i in range(4):
         moved_by = (1.0, 1.0)
         while not moved_by == (0.0, 0.0):
@@ -135,7 +106,7 @@ def main():
                 x_try = x + dx
                 y_try = y + dy
                 mover.moveCameraHorizontally(x_try, y_try, z)
-                rospy.sleep(1)
+                rospy.sleep(0.25)
 
                 t, r = func()
                 egg = detect_egg_once()
@@ -151,27 +122,36 @@ def main():
 
                     rospy.loginfo("Candidate %d: distance %.1f", j, dist)
 
+                    
+                    if i < 4:
+                        if dist < 70:
+                            rospy.loginfo("distance smaller than 70px, moving down immediately.")
+                            i += 1
+                            break
+                    else:
+                        if dist < 40:
+                            rospy.loginfo("distance smaller than 50px, egg found.")
+                            i+= 1
+                            break
+                            
+
             # commit only the best move
             x += best_dx
             y += best_dy
             moved_by = (best_dx, best_dy)
             rospy.loginfo("Best distance %.1f, moving by (%.3f, %.3f)", best_dist, best_dx, best_dy)
             mover.moveCameraHorizontally(x, y, z)
-            if best_dist < 70:
-                rospy.loginfo("best_dist smaller than 70px, moving down immediately")
-                break
         rospy.loginfo("moving down")
         z -= 0.04
 
 
-    z += 0.2
+    z += 0.3
     mover.moveCameraHorizontally(x, y, z)
     egg = detect_egg_once()
     egg_angle = egg.angle_deg
     t, r = get_camera_position()
 
 
-    z+= 0.1
     set_absolute_pose("right_hand", x, y, z, 1, 0, 0, 0, speed_ratio=0.12)
     z -= 0.1
     set_absolute_pose("right_hand", x, y, z, 1, 0, 0, 0, speed_ratio=0.15)
@@ -202,19 +182,35 @@ def main():
     # pick up egg
     gripper.close()
 
-    z += 0.5
+    z += 0.4
     set_absolute_pose("right_hand", x, y, z, q_target[0], q_target[1], q_target[2], q_target[3], speed_ratio=0.08)
 
+    # check if egg was actually gripped, otherwise repeat search procedure
+    gripped = check_object_gripped()
+    if not gripped:
+        main(egg_carton_index)
+        return
+
+
+    egg_basket = egg_basket_1
+    if egg_carton_index == 1:
+        egg_basket = egg_basket_2
+    if egg_carton_index == 2:
+        egg_basket = egg_basket_3
 
 
     limb = Limb()
-    limb.set_joint_position_speed(0.1)
-    limb.move_to_joint_positions(egg_basket_2, timeout=10.0)
+    joint_names = limb.joint_names()
+    limb.set_joint_position_speed(0.17)
+    joints = dict(zip(joint_names, egg_basket))
+    print(joints)
+    limb.move_to_joint_positions(joints, timeout=15.0)
+
     rospy.sleep(5)
     gripper.open()
 
 
-    main()
+    main(egg_carton_index=egg_carton_index+1)
 
 if __name__ == "__main__":
     main()
